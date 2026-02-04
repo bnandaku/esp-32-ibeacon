@@ -1,0 +1,58 @@
+# ESP-IDF Build System
+build/
+sdkconfig
+sdkconfig.old
+*.pyc
+
+# Generated sdkconfig files (user-specific)
+sdkconfig.ci.*
+sdkconfig.defaults.esp32c*
+sdkconfig.defaults.esp32s*
+
+# Build artifacts
+*.o
+*.a
+*.elf
+*.bin
+*.map
+
+# Dependencies
+dependencies.lock
+managed_components/
+
+# IDE and Editor files
+.vscode/
+.idea/
+.devcontainer/
+.clangd
+*.swp
+*.swo
+*~
+.DS_Store
+.project
+.cproject
+.settings/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+install_manifest.txt
+
+# Test and temporary files
+*.log
+*.tmp
+test_results/
+
+# Certificates and keys (if any)
+*.pem
+*.key
+*.crt
+
+# User-specific configuration (optional - uncomment if needed)
+# sdkconfig.defaults.local

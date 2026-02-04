@@ -1,0 +1,10 @@
+menu "iBeacon Transmitter Configuration"
+
+    config IBEACON_MODE
+        int
+        default 0
+        help
+            iBeacon transmitter mode (fixed).
+            This firmware only supports beacon transmission.
+
+endmenu
