@@ -36,6 +36,9 @@
 #include "driver/gpio.h"
 #include "esp_mac.h"
 #include "esp_crt_bundle.h"
+#include "esp_sntp.h"
+#include <time.h>
+#include <sys/time.h>
 
 // ============================================================================
 // CONFIGURATION - Edit these values
@@ -54,7 +57,7 @@
 #define WEBHOOK_URL "https://discord.com/api/webhooks/1470114757087334411/ZjD8kJmnlqKKyn4oOOm2zjOc233qqK87GsvckmmCmmCxXyis8s0mzxXndH2rQPOCwruB"
 
 // Firmware Version
-#define FIRMWARE_VERSION "3.2.3"
+#define FIRMWARE_VERSION "3.2.4"
 
 // LED Pin (GPIO 2 on most ESP32 dev boards)
 #define LED_GPIO 2
@@ -112,6 +115,8 @@ static int s_retry_num = 0;
 
 // Forward declarations
 static void webhook_task(void *pvParameter);
+static void initialize_sntp(void);
+static void get_timestamp(char* buffer, size_t buffer_size);
 
 /**
  * Load beacon configuration from NVS
@@ -275,13 +280,60 @@ static void wifi_init_sta(void)
             vTaskDelay(250 / portTICK_PERIOD_MS);
         }
 
-        ESP_LOGI(WIFI_TAG, "Network stable, starting webhook task...");
+        ESP_LOGI(WIFI_TAG, "Network stable, initializing time sync...");
+        initialize_sntp();
+
+        ESP_LOGI(WIFI_TAG, "Starting webhook task...");
         xTaskCreate(&webhook_task, "webhook", 12288, NULL, 3, NULL);  // 12KB stack (HTTPS with TLS)
     } else if (bits & WIFI_FAIL_BIT) {
         ESP_LOGE(WIFI_TAG, "✗ Failed to connect to SSID: %s", WIFI_SSID);
     } else {
         ESP_LOGE(WIFI_TAG, "✗ Unexpected WiFi event");
     }
+}
+
+/**
+ * Initialize SNTP for time synchronization
+ */
+static void initialize_sntp(void)
+{
+    ESP_LOGI(TAG, "Initializing SNTP...");
+    esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
+    esp_sntp_setservername(0, "pool.ntp.org");
+    esp_sntp_setservername(1, "time.google.com");
+    esp_sntp_init();
+
+    // Set timezone to UTC
+    setenv("TZ", "UTC", 1);
+    tzset();
+
+    // Wait for time to be synchronized (max 10 seconds)
+    int retry = 0;
+    const int retry_count = 50;  // 50 * 200ms = 10 seconds
+    while (esp_sntp_get_sync_status() == SNTP_SYNC_STATUS_RESET && ++retry < retry_count) {
+        ESP_LOGI(TAG, "Waiting for system time to sync... (%d/%d)", retry, retry_count);
+        vTaskDelay(200 / portTICK_PERIOD_MS);
+    }
+
+    if (esp_sntp_get_sync_status() == SNTP_SYNC_STATUS_COMPLETED) {
+        ESP_LOGI(TAG, "✓ Time synchronized via SNTP");
+    } else {
+        ESP_LOGW(TAG, "⚠️ Failed to sync time via SNTP");
+    }
+}
+
+/**
+ * Get current timestamp in ISO 8601 format (UTC)
+ */
+static void get_timestamp(char* buffer, size_t buffer_size)
+{
+    time_t now;
+    struct tm timeinfo;
+    time(&now);
+    gmtime_r(&now, &timeinfo);
+
+    // Format: 2026-02-08T17:45:30Z
+    strftime(buffer, buffer_size, "%Y-%m-%dT%H:%M:%SZ", &timeinfo);
 }
 
 /**
@@ -300,8 +352,12 @@ static void webhook_task(void *pvParameter)
              mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 
     while (1) {
+        // Get current timestamp
+        char timestamp[32];
+        get_timestamp(timestamp, sizeof(timestamp));
+
         // Create compact JSON payload
-        static char json_payload[512];  // Static allocation to keep off task stack
+        static char json_payload[600];  // Increased size for timestamp field
         snprintf(json_payload, sizeof(json_payload),
             "{\"content\":\"iBeacon Connected\","
             "\"embeds\":[{\"title\":\"ESP32 iBeacon Online\",\"color\":3066993,"
@@ -312,7 +368,8 @@ static void webhook_task(void *pvParameter)
             "{\"name\":\"Firmware\",\"value\":\"%s\",\"inline\":true},"
             "{\"name\":\"UUID\",\"value\":\"%s\",\"inline\":false},"
             "{\"name\":\"WiFi SSID\",\"value\":\"%s\",\"inline\":true},"
-            "{\"name\":\"Interval\",\"value\":\"%dms\",\"inline\":true}"
+            "{\"name\":\"Interval\",\"value\":\"%dms\",\"inline\":true},"
+            "{\"name\":\"Timestamp\",\"value\":\"%s\",\"inline\":true}"
             "]}]}",
             mac_str,
             g_beacon_major,
@@ -320,7 +377,8 @@ static void webhook_task(void *pvParameter)
             FIRMWARE_VERSION,
             BEACON_UUID_STRING,
             WIFI_SSID,
-            ADVERTISING_INTERVAL_MS
+            ADVERTISING_INTERVAL_MS,
+            timestamp
         );
 
         ESP_LOGI(TAG, "JSON payload size: %d bytes", strlen(json_payload));
@@ -512,8 +570,12 @@ static void send_ota_error_webhook(const char* error_message)
     snprintf(mac_str, sizeof(mac_str), "%02X:%02X:%02X:%02X:%02X:%02X",
              mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 
+    // Get current timestamp
+    char timestamp[32];
+    get_timestamp(timestamp, sizeof(timestamp));
+
     // Create JSON payload for error
-    static char json_payload[512];
+    static char json_payload[600];
     snprintf(json_payload, sizeof(json_payload),
         "{\"content\":\"⚠️ OTA Update Failed\","
         "\"embeds\":[{\"title\":\"ESP32 OTA Error\",\"color\":15158332,"
@@ -523,6 +585,7 @@ static void send_ota_error_webhook(const char* error_message)
         "{\"name\":\"Minor\",\"value\":\"%d\",\"inline\":true},"
         "{\"name\":\"Error\",\"value\":\"%s\",\"inline\":false},"
         "{\"name\":\"Firmware\",\"value\":\"%s\",\"inline\":true},"
+        "{\"name\":\"Timestamp\",\"value\":\"%s\",\"inline\":true},"
         "{\"name\":\"OTA URL\",\"value\":\"%s\",\"inline\":false}"
         "]}]}",
         mac_str,
@@ -530,6 +593,7 @@ static void send_ota_error_webhook(const char* error_message)
         g_beacon_minor,
         error_message,
         FIRMWARE_VERSION,
+        timestamp,
         OTA_UPDATE_URL
     );
 
@@ -579,8 +643,12 @@ static void send_ota_success_webhook(const char* status_message)
     snprintf(mac_str, sizeof(mac_str), "%02X:%02X:%02X:%02X:%02X:%02X",
              mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 
+    // Get current timestamp
+    char timestamp[32];
+    get_timestamp(timestamp, sizeof(timestamp));
+
     // Create JSON payload for success
-    static char json_payload[512];
+    static char json_payload[600];
     snprintf(json_payload, sizeof(json_payload),
         "{\"content\":\"✅ OTA Check Complete\","
         "\"embeds\":[{\"title\":\"ESP32 OTA Status\",\"color\":5763719,"
@@ -590,6 +658,7 @@ static void send_ota_success_webhook(const char* status_message)
         "{\"name\":\"Minor\",\"value\":\"%d\",\"inline\":true},"
         "{\"name\":\"Status\",\"value\":\"%s\",\"inline\":false},"
         "{\"name\":\"Firmware\",\"value\":\"%s\",\"inline\":true},"
+        "{\"name\":\"Timestamp\",\"value\":\"%s\",\"inline\":true},"
         "{\"name\":\"Free Heap\",\"value\":\"%lu bytes\",\"inline\":true}"
         "]}]}",
         mac_str,
@@ -597,6 +666,7 @@ static void send_ota_success_webhook(const char* status_message)
         g_beacon_minor,
         status_message,
         FIRMWARE_VERSION,
+        timestamp,
         esp_get_free_heap_size()
     );
 

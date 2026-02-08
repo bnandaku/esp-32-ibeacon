@@ -52,6 +52,56 @@ class WebhookFlasher:
         print(f"✓ Device flashed successfully on {port}")
         return True
 
+    def update_default_config(self, major, minor):
+        """Update DEFAULT_BEACON_MAJOR and DEFAULT_BEACON_MINOR in main.c"""
+        print(f"📝 Updating beacon config: Major={major}, Minor={minor}")
+
+        with open(self.main_c_path, 'r') as f:
+            content = f.read()
+
+        # Update MAJOR
+        content = re.sub(
+            r'#define DEFAULT_BEACON_MAJOR \d+',
+            f'#define DEFAULT_BEACON_MAJOR {major}',
+            content
+        )
+
+        # Update MINOR
+        content = re.sub(
+            r'#define DEFAULT_BEACON_MINOR \d+',
+            f'#define DEFAULT_BEACON_MINOR {minor}',
+            content
+        )
+
+        with open(self.main_c_path, 'w') as f:
+            f.write(content)
+
+        print(f"✓ Updated config in {self.main_c_path}")
+
+    def flash_single(self, major, minor, port, baud=115200):
+        """Flash a single beacon with specific major/minor values"""
+        print("\n" + "="*70)
+        print(f"  Flashing Beacon - Major: {major}, Minor: {minor}")
+        print(f"  Port: {port}, Baud: {baud}")
+        print("="*70)
+
+        # Update config
+        self.update_default_config(major, minor)
+
+        # Build firmware
+        if not self.build_firmware():
+            return False
+
+        # Flash device
+        if not self.flash_device(port, baud):
+            return False
+
+        print("\n✅ Beacon ready!")
+        print(f"   Major: {major}, Minor: {minor}")
+        print("="*70)
+
+        return True
+
     def monitor(self, port, baud=115200):
         """Monitor serial output"""
         print(f"📡 Starting serial monitor on {port}...")
@@ -180,6 +230,7 @@ Examples:
     parser.add_argument('--major', type=int, help='Major number (0-65535)')
     parser.add_argument('--minor', type=int, help='Minor number (0-65535)')
     parser.add_argument('--port', help='Serial port (e.g., /dev/cu.usbserial-0001)')
+    parser.add_argument('--baud', type=int, default=115200, help='Baud rate (default: 115200)')
     parser.add_argument('--batch', help='JSON file with multiple beacon configs')
     parser.add_argument('--create-example', action='store_true', help='Create example beacons.json')
 
@@ -189,7 +240,7 @@ Examples:
         create_example_config()
         return 0
 
-    flasher = BeaconFlasher()
+    flasher = WebhookFlasher()
 
     if args.batch:
         # Batch mode
@@ -201,7 +252,7 @@ Examples:
 
     elif args.major is not None and args.minor is not None and args.port:
         # Single beacon mode
-        if not flasher.flash_single(args.major, args.minor, args.port):
+        if not flasher.flash_single(args.major, args.minor, args.port, args.baud):
             return 1
 
     else:
