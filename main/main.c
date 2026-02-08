@@ -54,7 +54,7 @@
 #define WEBHOOK_URL "https://discord.com/api/webhooks/1470114757087334411/ZjD8kJmnlqKKyn4oOOm2zjOc233qqK87GsvckmmCmmCxXyis8s0mzxXndH2rQPOCwruB"
 
 // Firmware Version
-#define FIRMWARE_VERSION "3.2.1"
+#define FIRMWARE_VERSION "3.2.2"
 
 // LED Pin (GPIO 2 on most ESP32 dev boards)
 #define LED_GPIO 2
@@ -70,7 +70,7 @@
 
 // Default Major/Minor values (used only on first boot if NVS is empty)
 #define DEFAULT_BEACON_MAJOR 100
-#define DEFAULT_BEACON_MINOR 15
+#define DEFAULT_BEACON_MINOR 10
 
 // Advertising interval in milliseconds (50-10000)
 // 50ms = 20 broadcasts per second (very responsive)
@@ -640,6 +640,40 @@ static void blink_led_ota_error(void)
 }
 
 /**
+ * Compare semantic versions (major.minor.patch)
+ * Returns: 1 if v1 > v2, -1 if v1 < v2, 0 if equal
+ */
+static int compare_versions(const char *v1, const char *v2)
+{
+    int major1, minor1, patch1;
+    int major2, minor2, patch2;
+
+    // Parse version strings
+    if (sscanf(v1, "%d.%d.%d", &major1, &minor1, &patch1) != 3) {
+        ESP_LOGW(OTA_TAG, "Invalid version format: %s", v1);
+        return 0;  // Treat as equal if can't parse
+    }
+    if (sscanf(v2, "%d.%d.%d", &major2, &minor2, &patch2) != 3) {
+        ESP_LOGW(OTA_TAG, "Invalid version format: %s", v2);
+        return 0;  // Treat as equal if can't parse
+    }
+
+    // Compare major version
+    if (major1 > major2) return 1;
+    if (major1 < major2) return -1;
+
+    // Compare minor version
+    if (minor1 > minor2) return 1;
+    if (minor1 < minor2) return -1;
+
+    // Compare patch version
+    if (patch1 > patch2) return 1;
+    if (patch1 < patch2) return -1;
+
+    return 0;  // Equal
+}
+
+/**
  * Perform OTA update
  */
 static void perform_ota_update(void)
@@ -686,15 +720,24 @@ static void perform_ota_update(void)
     ESP_LOGI(OTA_TAG, "Current firmware version: %s", running_app_info->version);
     ESP_LOGI(OTA_TAG, "New firmware version: %s", new_app_info.version);
 
-    // Compare versions
-    if (strcmp(new_app_info.version, running_app_info->version) == 0) {
+    // Compare versions (prevent downgrades and skip if already on latest)
+    int version_cmp = compare_versions(new_app_info.version, running_app_info->version);
+
+    if (version_cmp == 0) {
         ESP_LOGI(OTA_TAG, "✓ Already running latest firmware version");
         esp_https_ota_abort(ota_handle);
         send_ota_success_webhook("Already on latest firmware - no update needed");
         return;
+    } else if (version_cmp < 0) {
+        ESP_LOGI(OTA_TAG, "⚠ New firmware (%s) is older than current (%s) - skipping downgrade",
+                 new_app_info.version, running_app_info->version);
+        esp_https_ota_abort(ota_handle);
+        send_ota_success_webhook("Skipped downgrade - keeping current firmware");
+        return;
     }
 
-    ESP_LOGI(OTA_TAG, "New firmware available! Downloading...");
+    ESP_LOGI(OTA_TAG, "✓ New firmware available! Upgrading from %s to %s...",
+             running_app_info->version, new_app_info.version);
 
     // Download and flash the new firmware
     while (1) {
