@@ -644,7 +644,6 @@ static void blink_led_ota_error(void)
  */
 static void perform_ota_update(void)
 {
-    ESP_LOGI(OTA_TAG, "Starting OTA update...");
     ESP_LOGI(OTA_TAG, "Checking for updates at: %s", OTA_UPDATE_URL);
 
     esp_http_client_config_t config = {
@@ -656,30 +655,73 @@ static void perform_ota_update(void)
 
     esp_https_ota_config_t ota_config = {
         .http_config = &config,
+        .partial_http_download = true,
+        .max_http_request_size = 2048,
     };
 
-    esp_err_t ret = esp_https_ota(&ota_config);
+    esp_https_ota_handle_t ota_handle = NULL;
+    esp_err_t ret = esp_https_ota_begin(&ota_config, &ota_handle);
 
+    if (ret != ESP_OK) {
+        ESP_LOGE(OTA_TAG, "✗ OTA begin failed: %s", esp_err_to_name(ret));
+        blink_led_ota_error();
+        send_ota_error_webhook(esp_err_to_name(ret));
+        return;
+    }
+
+    // Get image descriptor from the new firmware
+    esp_app_desc_t new_app_info;
+    ret = esp_https_ota_get_img_desc(ota_handle, &new_app_info);
+    if (ret != ESP_OK) {
+        ESP_LOGE(OTA_TAG, "✗ Failed to get image descriptor: %s", esp_err_to_name(ret));
+        esp_https_ota_abort(ota_handle);
+        blink_led_ota_error();
+        send_ota_error_webhook("Failed to read firmware descriptor");
+        return;
+    }
+
+    // Get current running app descriptor
+    const esp_app_desc_t *running_app_info = esp_app_get_description();
+
+    ESP_LOGI(OTA_TAG, "Current firmware version: %s", running_app_info->version);
+    ESP_LOGI(OTA_TAG, "New firmware version: %s", new_app_info.version);
+
+    // Compare versions
+    if (strcmp(new_app_info.version, running_app_info->version) == 0) {
+        ESP_LOGI(OTA_TAG, "✓ Already running latest firmware version");
+        esp_https_ota_abort(ota_handle);
+        send_ota_success_webhook("Already on latest firmware - no update needed");
+        return;
+    }
+
+    ESP_LOGI(OTA_TAG, "New firmware available! Downloading...");
+
+    // Download and flash the new firmware
+    while (1) {
+        ret = esp_https_ota_perform(ota_handle);
+        if (ret != ESP_ERR_HTTPS_OTA_IN_PROGRESS) {
+            break;
+        }
+    }
+
+    if (ret != ESP_OK) {
+        ESP_LOGE(OTA_TAG, "✗ OTA download failed: %s", esp_err_to_name(ret));
+        esp_https_ota_abort(ota_handle);
+        blink_led_ota_error();
+        send_ota_error_webhook(esp_err_to_name(ret));
+        return;
+    }
+
+    // Finish OTA update
+    ret = esp_https_ota_finish(ota_handle);
     if (ret == ESP_OK) {
         ESP_LOGI(OTA_TAG, "✓ OTA update successful! Rebooting...");
-
-        // Send success webhook before rebooting
         send_ota_success_webhook("Firmware updated successfully - rebooting");
-
         vTaskDelay(1000 / portTICK_PERIOD_MS);
         esp_restart();
-    } else if (ret == ESP_ERR_NOT_FOUND) {
-        // No update available - this is normal
-        ESP_LOGI(OTA_TAG, "No update available (already on latest version)");
-        send_ota_success_webhook("No update needed - already on latest firmware");
     } else {
-        // Actual error occurred
-        ESP_LOGE(OTA_TAG, "✗ OTA update failed: %s", esp_err_to_name(ret));
-
-        // Blink LED to indicate error
+        ESP_LOGE(OTA_TAG, "✗ OTA finish failed: %s", esp_err_to_name(ret));
         blink_led_ota_error();
-
-        // Send webhook notification
         send_ota_error_webhook(esp_err_to_name(ret));
     }
 }
