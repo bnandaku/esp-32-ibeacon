@@ -1,10 +1,21 @@
-menu "iBeacon Transmitter Configuration"
+menu "ESP32 Webhook Sender Configuration"
 
-    config IBEACON_MODE
-        int
-        default 0
+    config EXAMPLE_WIFI_SSID
+        string "WiFi SSID"
+        default "myssid"
         help
-            iBeacon transmitter mode (fixed).
-            This firmware only supports beacon transmission.
+            SSID (network name) for the device to connect to.
+
+    config EXAMPLE_WIFI_PASSWORD
+        string "WiFi Password"
+        default "mypassword"
+        help
+            WiFi password (WPA or WPA2) for the device.
+
+    config EXAMPLE_FIRMWARE_UPGRADE_URL
+        string "Firmware Upgrade URL"
+        default "http://192.168.1.100:8080/firmware.bin"
+        help
+            URL of firmware to download for OTA updates.
 
 endmenu

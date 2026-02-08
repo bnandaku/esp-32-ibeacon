@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  # ESP-IDF Builder - used by OTA server to compile firmware
+  builder:
+    build:
+      context: .
+      dockerfile: Dockerfile.builder
+    image: beacon-builder
+    command: /bin/true  # Just build the image, don't run
+    profiles:
+      - build-only
+
+  # OTA Server - monitors git and serves firmware
+  ota-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: esp32-ota-server
+    ports:
+      - "8080:8080"
+    volumes:
+      # Mount project directory (read-only for server, builder needs write access)
+      - ../:/project
+      # Mount firmware output directory
+      - firmware-data:/firmware
+      # Mount docker socket so server can run builder container
+      - /var/run/docker.sock:/var/run/docker.sock
+    restart: unless-stopped
+    environment:
+      - TZ=America/Los_Angeles
+    depends_on:
+      - builder
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  firmware-data:
+    driver: local

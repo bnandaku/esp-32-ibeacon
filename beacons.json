@@ -1,0 +1,32 @@
+[
+  {
+    "name": "Living Room",
+    "major": 100,
+    "minor": 10,
+    "port": "/dev/cu.usbserial-0001"
+  },
+  {
+    "name": "Bedroom",
+    "major": 100,
+    "minor": 11,
+    "port": "/dev/cu.usbserial-0001"
+  },
+  {
+    "name": "Office",
+    "major": 100,
+    "minor": 12,
+    "port": "/dev/cu.usbserial-0001"
+  },
+  {
+    "name": "Hallway",
+    "major": 100,
+    "minor": 13,
+    "port": "/dev/cu.usbserial-0001"
+  },
+  {
+    "name": "Kitchen",
+    "major": 100,
+    "minor": 14,
+    "port": "/dev/cu.usbserial-0001"
+  }
+]
