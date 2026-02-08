@@ -54,7 +54,7 @@
 #define WEBHOOK_URL "https://discord.com/api/webhooks/1470114757087334411/ZjD8kJmnlqKKyn4oOOm2zjOc233qqK87GsvckmmCmmCxXyis8s0mzxXndH2rQPOCwruB"
 
 // Firmware Version
-#define FIRMWARE_VERSION "3.2.2"
+#define FIRMWARE_VERSION "3.2.3"
 
 // LED Pin (GPIO 2 on most ESP32 dev boards)
 #define LED_GPIO 2
@@ -70,15 +70,15 @@
 
 // Default Major/Minor values (used only on first boot if NVS is empty)
 #define DEFAULT_BEACON_MAJOR 100
-#define DEFAULT_BEACON_MINOR 10
+#define DEFAULT_BEACON_MINOR 14
 
 // Advertising interval in milliseconds (50-10000)
 // 50ms = 20 broadcasts per second (very responsive)
 #define ADVERTISING_INTERVAL_MS 50
 
 // Transmit Power (ESP32 Power Levels)
-// ESP_PWR_LVL_P3 = +3 dBm (~10m range) - Good balance for room detection
-#define TRANSMIT_POWER ESP_PWR_LVL_P3
+// ESP_PWR_LVL_N3 = -3 dBm (~3-5m range) - Reduced power for closer proximity detection
+#define TRANSMIT_POWER ESP_PWR_LVL_N3
 
 // ============================================================================
 // END OF CONFIGURATION
