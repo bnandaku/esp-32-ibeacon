@@ -9,6 +9,12 @@ cd /project
 # Source IDF environment
 . $IDF_PATH/export.sh
 
+# Clean build cache if it exists (to avoid path conflicts)
+if [ -d "build" ]; then
+    echo "🧹 Cleaning previous build cache..."
+    idf.py fullclean
+fi
+
 # Build the project
 idf.py build
 

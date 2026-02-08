@@ -499,6 +499,147 @@ static void start_ibeacon(void)
 }
 
 /**
+ * Send OTA error webhook notification
+ */
+static void send_ota_error_webhook(const char* error_message)
+{
+    ESP_LOGI(OTA_TAG, "Sending OTA error webhook...");
+
+    // Get MAC address
+    uint8_t mac[6];
+    esp_read_mac(mac, ESP_MAC_WIFI_STA);
+    char mac_str[18];
+    snprintf(mac_str, sizeof(mac_str), "%02X:%02X:%02X:%02X:%02X:%02X",
+             mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+
+    // Create JSON payload for error
+    static char json_payload[512];
+    snprintf(json_payload, sizeof(json_payload),
+        "{\"content\":\"⚠️ OTA Update Failed\","
+        "\"embeds\":[{\"title\":\"ESP32 OTA Error\",\"color\":15158332,"
+        "\"fields\":["
+        "{\"name\":\"Device MAC\",\"value\":\"%s\",\"inline\":true},"
+        "{\"name\":\"Major\",\"value\":\"%d\",\"inline\":true},"
+        "{\"name\":\"Minor\",\"value\":\"%d\",\"inline\":true},"
+        "{\"name\":\"Error\",\"value\":\"%s\",\"inline\":false},"
+        "{\"name\":\"Firmware\",\"value\":\"%s\",\"inline\":true},"
+        "{\"name\":\"OTA URL\",\"value\":\"%s\",\"inline\":false}"
+        "]}]}",
+        mac_str,
+        g_beacon_major,
+        g_beacon_minor,
+        error_message,
+        FIRMWARE_VERSION,
+        OTA_UPDATE_URL
+    );
+
+    // Configure HTTP client for HTTPS
+    esp_http_client_config_t config = {
+        .url = WEBHOOK_URL,
+        .method = HTTP_METHOD_POST,
+        .timeout_ms = 10000,
+        .crt_bundle_attach = esp_crt_bundle_attach,
+    };
+
+    esp_http_client_handle_t client = esp_http_client_init(&config);
+    if (client == NULL) {
+        ESP_LOGE(OTA_TAG, "Failed to initialize HTTP client for webhook");
+        return;
+    }
+
+    esp_http_client_set_header(client, "Content-Type", "application/json");
+    esp_http_client_set_post_field(client, json_payload, strlen(json_payload));
+
+    esp_err_t err = esp_http_client_perform(client);
+    if (err == ESP_OK) {
+        int status_code = esp_http_client_get_status_code(client);
+        if (status_code == 200 || status_code == 204) {
+            ESP_LOGI(OTA_TAG, "✓ OTA error webhook sent successfully");
+        } else {
+            ESP_LOGW(OTA_TAG, "⚠️ Webhook returned status: %d", status_code);
+        }
+    } else {
+        ESP_LOGE(OTA_TAG, "✗ Failed to send webhook: %s", esp_err_to_name(err));
+    }
+
+    esp_http_client_cleanup(client);
+}
+
+/**
+ * Send OTA success webhook notification
+ */
+static void send_ota_success_webhook(const char* status_message)
+{
+    ESP_LOGI(OTA_TAG, "Sending OTA success webhook...");
+
+    // Get MAC address
+    uint8_t mac[6];
+    esp_read_mac(mac, ESP_MAC_WIFI_STA);
+    char mac_str[18];
+    snprintf(mac_str, sizeof(mac_str), "%02X:%02X:%02X:%02X:%02X:%02X",
+             mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+
+    // Create JSON payload for success
+    static char json_payload[512];
+    snprintf(json_payload, sizeof(json_payload),
+        "{\"content\":\"✅ OTA Check Complete\","
+        "\"embeds\":[{\"title\":\"ESP32 OTA Status\",\"color\":5763719,"
+        "\"fields\":["
+        "{\"name\":\"Device MAC\",\"value\":\"%s\",\"inline\":true},"
+        "{\"name\":\"Major\",\"value\":\"%d\",\"inline\":true},"
+        "{\"name\":\"Minor\",\"value\":\"%d\",\"inline\":true},"
+        "{\"name\":\"Status\",\"value\":\"%s\",\"inline\":false},"
+        "{\"name\":\"Firmware\",\"value\":\"%s\",\"inline\":true},"
+        "{\"name\":\"Free Heap\",\"value\":\"%lu bytes\",\"inline\":true}"
+        "]}]}",
+        mac_str,
+        g_beacon_major,
+        g_beacon_minor,
+        status_message,
+        FIRMWARE_VERSION,
+        esp_get_free_heap_size()
+    );
+
+    // Configure HTTP client for HTTPS
+    esp_http_client_config_t config = {
+        .url = WEBHOOK_URL,
+        .method = HTTP_METHOD_POST,
+        .timeout_ms = 10000,
+        .crt_bundle_attach = esp_crt_bundle_attach,
+    };
+
+    esp_http_client_handle_t client = esp_http_client_init(&config);
+    if (client == NULL) {
+        ESP_LOGE(OTA_TAG, "Failed to initialize HTTP client for webhook");
+        return;
+    }
+
+    esp_http_client_set_header(client, "Content-Type", "application/json");
+    esp_http_client_set_post_field(client, json_payload, strlen(json_payload));
+
+    esp_err_t err = esp_http_client_perform(client);
+    if (err == ESP_OK) {
+        int status_code = esp_http_client_get_status_code(client);
+        if (status_code == 200 || status_code == 204) {
+            ESP_LOGI(OTA_TAG, "✓ OTA success webhook sent");
+        }
+    }
+
+    esp_http_client_cleanup(client);
+}
+
+/**
+ * Blink LED to indicate OTA error
+ */
+static void blink_led_ota_error(void)
+{
+    // Blink LED for 500ms
+    gpio_set_level(LED_GPIO, 1);  // On
+    vTaskDelay(500 / portTICK_PERIOD_MS);
+    gpio_set_level(LED_GPIO, 0);  // Off
+}
+
+/**
  * Perform OTA update
  */
 static void perform_ota_update(void)
@@ -521,10 +662,25 @@ static void perform_ota_update(void)
 
     if (ret == ESP_OK) {
         ESP_LOGI(OTA_TAG, "✓ OTA update successful! Rebooting...");
+
+        // Send success webhook before rebooting
+        send_ota_success_webhook("Firmware updated successfully - rebooting");
+
         vTaskDelay(1000 / portTICK_PERIOD_MS);
         esp_restart();
+    } else if (ret == ESP_ERR_NOT_FOUND) {
+        // No update available - this is normal
+        ESP_LOGI(OTA_TAG, "No update available (already on latest version)");
+        send_ota_success_webhook("No update needed - already on latest firmware");
     } else {
+        // Actual error occurred
         ESP_LOGE(OTA_TAG, "✗ OTA update failed: %s", esp_err_to_name(ret));
+
+        // Blink LED to indicate error
+        blink_led_ota_error();
+
+        // Send webhook notification
+        send_ota_error_webhook(esp_err_to_name(ret));
     }
 }
 

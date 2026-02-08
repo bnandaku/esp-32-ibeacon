@@ -129,10 +129,16 @@ func buildFirmware() {
 	log.Println("🔨 Starting firmware build...")
 	startTime := time.Now()
 
+	// Get host project path from environment (fallback to container path)
+	hostProjectPath := os.Getenv("HOST_PROJECT_PATH")
+	if hostProjectPath == "" {
+		hostProjectPath = projectPath
+	}
+
 	// Run build in Docker container
 	cmd := exec.Command("docker", "run", "--rm",
-		"-v", projectPath+":/project",
-		"-v", firmwarePath+":/firmware",
+		"-v", hostProjectPath+":/project",
+		"-v", "ota-server_firmware-data:/firmware",
 		"beacon-builder",
 		"/build.sh")
 
