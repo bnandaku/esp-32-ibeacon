@@ -54,7 +54,7 @@
 #define WEBHOOK_URL "https://discord.com/api/webhooks/1470114757087334411/ZjD8kJmnlqKKyn4oOOm2zjOc233qqK87GsvckmmCmmCxXyis8s0mzxXndH2rQPOCwruB"
 
 // Firmware Version
-#define FIRMWARE_VERSION "3.2.0"
+#define FIRMWARE_VERSION "3.2.1"
 
 // LED Pin (GPIO 2 on most ESP32 dev boards)
 #define LED_GPIO 2
@@ -779,7 +779,9 @@ void app_main(void)
 
     // Load beacon configuration from NVS
     bool config_loaded = load_beacon_config_from_nvs();
-    if (!config_loaded && g_beacon_minor != DEFAULT_BEACON_MINOR) {
+    if (!config_loaded) {
+        // First boot: save the DEFAULT values from this firmware to NVS
+        // This ensures the values persist across OTA updates
         ESP_LOGI(NVS_TAG, "First boot detected, saving configuration to NVS");
         save_beacon_config_to_nvs(g_beacon_major, g_beacon_minor);
     }
