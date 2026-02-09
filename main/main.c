@@ -48,9 +48,14 @@
 #define WIFI_SSID      CONFIG_EXAMPLE_WIFI_SSID
 #define WIFI_PASSWORD  CONFIG_EXAMPLE_WIFI_PASSWORD
 
-// OTA Server URL - Where to check for firmware updates (optional)
-// Example: "http://192.168.1.100:8080/firmware.bin"
-#define OTA_UPDATE_URL CONFIG_EXAMPLE_FIRMWARE_UPGRADE_URL
+// OTA Version Check URL - Lightweight endpoint to check firmware version
+// Can be same as download URL or separate (e.g., status endpoint)
+// Example: "http://192.168.1.100:8080/version" or same as OTA_DOWNLOAD_URL
+#define OTA_VERSION_CHECK_URL CONFIG_EXAMPLE_FIRMWARE_UPGRADE_URL
+
+// OTA Download URL - Where to download the actual firmware binary
+// Example: "http://192.168.1.100:8080/firmware.bin" or CDN URL
+#define OTA_DOWNLOAD_URL CONFIG_EXAMPLE_FIRMWARE_UPGRADE_URL
 
 // Webhook URL - Send HTTPS POST requests to this URL
 // Change this to your webhook endpoint
@@ -599,7 +604,7 @@ static void send_ota_error_webhook(const char* error_message)
         error_message,
         app_desc->version,
         timestamp,
-        OTA_UPDATE_URL
+        OTA_DOWNLOAD_URL
     );
 
     // Configure HTTP client for HTTPS
@@ -766,11 +771,11 @@ static int compare_versions(const char *v1, const char *v2)
  */
 static int check_ota_available(char *new_version, size_t version_len, bool *force_update)
 {
-    ESP_LOGI(OTA_TAG, "Checking for updates at: %s", OTA_UPDATE_URL);
+    ESP_LOGI(OTA_TAG, "Checking version at: %s", OTA_VERSION_CHECK_URL);
 
     // Use GET with Range header to request only first byte (gets headers without full download)
     esp_http_client_config_t config = {
-        .url = OTA_UPDATE_URL,
+        .url = OTA_VERSION_CHECK_URL,
         .timeout_ms = 10000,
         .method = HTTP_METHOD_GET,
         .crt_bundle_attach = esp_crt_bundle_attach,
@@ -893,10 +898,10 @@ static void perform_ota_update(void)
     }
 
     // Step 2: Download and install firmware
-    ESP_LOGI(OTA_TAG, "Starting firmware download...");
+    ESP_LOGI(OTA_TAG, "Downloading firmware from: %s", OTA_DOWNLOAD_URL);
 
     esp_http_client_config_t config = {
-        .url = OTA_UPDATE_URL,
+        .url = OTA_DOWNLOAD_URL,
         .timeout_ms = 30000,
         .keep_alive_enable = true,
         .crt_bundle_attach = esp_crt_bundle_attach,
