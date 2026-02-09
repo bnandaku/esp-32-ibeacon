@@ -57,7 +57,7 @@
 #define WEBHOOK_URL "https://discord.com/api/webhooks/1470114757087334411/ZjD8kJmnlqKKyn4oOOm2zjOc233qqK87GsvckmmCmmCxXyis8s0mzxXndH2rQPOCwruB"
 
 // Firmware Version
-#define FIRMWARE_VERSION "3.2.4"
+#define FIRMWARE_VERSION "3.2.5"
 
 // LED Pin (GPIO 2 on most ESP32 dev boards)
 #define LED_GPIO 2
@@ -883,8 +883,28 @@ void app_main(void)
     ESP_LOGI(TAG, "✓ LED initialized on GPIO %d", LED_GPIO);
 
     // Initialize Non-Volatile Storage (required for Bluetooth and WiFi)
+    // First, try to backup beacon config before any potential NVS erase
+    uint16_t backup_major = DEFAULT_BEACON_MAJOR;
+    uint16_t backup_minor = DEFAULT_BEACON_MINOR;
+    bool had_backup = false;
+
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        // NVS needs to be erased - try to backup beacon config first
+        ESP_LOGW(NVS_TAG, "NVS migration required, attempting to backup beacon config...");
+
+        // Try to read existing values before erasing
+        nvs_handle_t backup_handle;
+        if (nvs_open(NVS_NAMESPACE, NVS_READONLY, &backup_handle) == ESP_OK) {
+            if (nvs_get_u16(backup_handle, NVS_KEY_MAJOR, &backup_major) == ESP_OK &&
+                nvs_get_u16(backup_handle, NVS_KEY_MINOR, &backup_minor) == ESP_OK) {
+                had_backup = true;
+                ESP_LOGI(NVS_TAG, "✓ Backed up beacon config: Major=%d, Minor=%d", backup_major, backup_minor);
+            }
+            nvs_close(backup_handle);
+        }
+
+        ESP_LOGW(NVS_TAG, "Erasing NVS...");
         ESP_ERROR_CHECK(nvs_flash_erase());
         ret = nvs_flash_init();
     }
@@ -892,11 +912,19 @@ void app_main(void)
 
     // Load beacon configuration from NVS
     bool config_loaded = load_beacon_config_from_nvs();
+
     if (!config_loaded) {
-        // First boot: save the DEFAULT values from this firmware to NVS
-        // This ensures the values persist across OTA updates
-        ESP_LOGI(NVS_TAG, "First boot detected, saving configuration to NVS");
-        save_beacon_config_to_nvs(g_beacon_major, g_beacon_minor);
+        if (had_backup) {
+            // NVS was erased but we have a backup - restore it
+            ESP_LOGI(NVS_TAG, "Restoring beacon config from backup");
+            g_beacon_major = backup_major;
+            g_beacon_minor = backup_minor;
+            save_beacon_config_to_nvs(g_beacon_major, g_beacon_minor);
+        } else {
+            // First boot: save the DEFAULT values from this firmware to NVS
+            ESP_LOGI(NVS_TAG, "First boot detected, saving configuration to NVS");
+            save_beacon_config_to_nvs(g_beacon_major, g_beacon_minor);
+        }
     }
 
     ESP_LOGI(TAG, "");
