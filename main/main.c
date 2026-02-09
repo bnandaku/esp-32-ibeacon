@@ -57,7 +57,7 @@
 #define WEBHOOK_URL "https://discord.com/api/webhooks/1470114757087334411/ZjD8kJmnlqKKyn4oOOm2zjOc233qqK87GsvckmmCmmCxXyis8s0mzxXndH2rQPOCwruB"
 
 // Firmware Version
-#define FIRMWARE_VERSION "3.3.0"
+#define FIRMWARE_VERSION "3.3.1"
 
 // LED Pin (GPIO 2 on most ESP32 dev boards)
 #define LED_GPIO 2
@@ -73,7 +73,7 @@
 
 // Default Major/Minor values (used only on first boot if NVS is empty)
 #define DEFAULT_BEACON_MAJOR 100
-#define DEFAULT_BEACON_MINOR 14
+#define DEFAULT_BEACON_MINOR 10
 
 // Advertising interval in milliseconds (50-10000)
 // 50ms = 20 broadcasts per second (very responsive)
@@ -773,16 +773,23 @@ static int check_ota_available(char *new_version, size_t version_len, bool *forc
         return -1;
     }
 
-    esp_err_t err = esp_http_client_perform(client);
+    // Open connection and send HEAD request
+    esp_err_t err = esp_http_client_open(client, 0);
     if (err != ESP_OK) {
-        ESP_LOGE(OTA_TAG, "HEAD request failed: %s", esp_err_to_name(err));
+        ESP_LOGE(OTA_TAG, "Failed to open HTTP connection: %s", esp_err_to_name(err));
         esp_http_client_cleanup(client);
         return -1;
     }
 
+    // Fetch response headers
+    int content_length = esp_http_client_fetch_headers(client);
     int status_code = esp_http_client_get_status_code(client);
+
+    ESP_LOGI(OTA_TAG, "HEAD response: status=%d, content_length=%d", status_code, content_length);
+
     if (status_code != 200) {
         ESP_LOGE(OTA_TAG, "HEAD request returned status: %d", status_code);
+        esp_http_client_close(client);
         esp_http_client_cleanup(client);
         return -1;
     }
@@ -790,8 +797,11 @@ static int check_ota_available(char *new_version, size_t version_len, bool *forc
     // Check for X-Force-Update header
     *force_update = false;
     char *force_header_ptr = NULL;
-    if (esp_http_client_get_header(client, "X-Force-Update", &force_header_ptr) == ESP_OK) {
-        if (force_header_ptr && (strcmp(force_header_ptr, "true") == 0 || strcmp(force_header_ptr, "1") == 0)) {
+    err = esp_http_client_get_header(client, "X-Force-Update", &force_header_ptr);
+    ESP_LOGI(OTA_TAG, "X-Force-Update header: err=%s, value=%s",
+             esp_err_to_name(err), force_header_ptr ? force_header_ptr : "NULL");
+    if (err == ESP_OK && force_header_ptr != NULL) {
+        if (strcmp(force_header_ptr, "true") == 0 || strcmp(force_header_ptr, "1") == 0) {
             ESP_LOGW(OTA_TAG, "⚠️  X-Force-Update header detected - will force update!");
             *force_update = true;
         }
@@ -799,8 +809,13 @@ static int check_ota_available(char *new_version, size_t version_len, bool *forc
 
     // Get firmware version from X-Firmware-Version header
     char *version_header_ptr = NULL;
-    if (esp_http_client_get_header(client, "X-Firmware-Version", &version_header_ptr) != ESP_OK || version_header_ptr == NULL) {
+    err = esp_http_client_get_header(client, "X-Firmware-Version", &version_header_ptr);
+    ESP_LOGI(OTA_TAG, "X-Firmware-Version header: err=%s, value=%s",
+             esp_err_to_name(err), version_header_ptr ? version_header_ptr : "NULL");
+
+    if (err != ESP_OK || version_header_ptr == NULL) {
         ESP_LOGW(OTA_TAG, "No X-Firmware-Version header found, will download to check");
+        esp_http_client_close(client);
         esp_http_client_cleanup(client);
         return 1;  // Assume update available if can't check version
     }
@@ -808,6 +823,9 @@ static int check_ota_available(char *new_version, size_t version_len, bool *forc
     // Copy version string to output buffer
     strncpy(new_version, version_header_ptr, version_len - 1);
     new_version[version_len - 1] = '\0';
+
+    // Close connection
+    esp_http_client_close(client);
 
     esp_http_client_cleanup(client);
 
