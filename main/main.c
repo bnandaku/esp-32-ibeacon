@@ -760,10 +760,11 @@ static int check_ota_available(char *new_version, size_t version_len, bool *forc
 {
     ESP_LOGI(OTA_TAG, "Checking for updates at: %s", OTA_UPDATE_URL);
 
+    // Use GET with Range header to request only first byte (gets headers without full download)
     esp_http_client_config_t config = {
         .url = OTA_UPDATE_URL,
         .timeout_ms = 10000,
-        .method = HTTP_METHOD_HEAD,
+        .method = HTTP_METHOD_GET,
         .crt_bundle_attach = esp_crt_bundle_attach,
     };
 
@@ -773,7 +774,10 @@ static int check_ota_available(char *new_version, size_t version_len, bool *forc
         return -1;
     }
 
-    // Open connection and send HEAD request
+    // Set Range header to only request first byte (206 Partial Content response)
+    esp_http_client_set_header(client, "Range", "bytes=0-0");
+
+    // Open connection and send request
     esp_err_t err = esp_http_client_open(client, 0);
     if (err != ESP_OK) {
         ESP_LOGE(OTA_TAG, "Failed to open HTTP connection: %s", esp_err_to_name(err));
@@ -785,10 +789,11 @@ static int check_ota_available(char *new_version, size_t version_len, bool *forc
     int content_length = esp_http_client_fetch_headers(client);
     int status_code = esp_http_client_get_status_code(client);
 
-    ESP_LOGI(OTA_TAG, "HEAD response: status=%d, content_length=%d", status_code, content_length);
+    ESP_LOGI(OTA_TAG, "GET response: status=%d, content_length=%d", status_code, content_length);
 
-    if (status_code != 200) {
-        ESP_LOGE(OTA_TAG, "HEAD request returned status: %d", status_code);
+    // Accept both 200 (OK) and 206 (Partial Content)
+    if (status_code != 200 && status_code != 206) {
+        ESP_LOGE(OTA_TAG, "GET request returned status: %d", status_code);
         esp_http_client_close(client);
         esp_http_client_cleanup(client);
         return -1;
@@ -824,9 +829,8 @@ static int check_ota_available(char *new_version, size_t version_len, bool *forc
     strncpy(new_version, version_header_ptr, version_len - 1);
     new_version[version_len - 1] = '\0';
 
-    // Close connection
+    // Close connection and cleanup
     esp_http_client_close(client);
-
     esp_http_client_cleanup(client);
 
     // Get current version
