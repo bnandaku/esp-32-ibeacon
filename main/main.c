@@ -78,8 +78,8 @@
 #define DEFAULT_BEACON_MINOR 14
 
 // Advertising interval in milliseconds (50-10000)
-// 50ms = 20 broadcasts per second (very responsive)
-#define ADVERTISING_INTERVAL_MS 50
+// 300ms = ~3.3 broadcasts per second (balanced power/responsiveness)
+#define ADVERTISING_INTERVAL_MS 300
 
 // Transmit Power (ESP32 Power Levels)
 // ESP_PWR_LVL_N0 = 0 dBm (~5-8m range) - Medium power for room detection
