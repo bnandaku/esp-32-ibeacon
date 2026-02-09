@@ -787,21 +787,23 @@ static int check_ota_available(char *new_version, size_t version_len, bool *forc
         return -1;
     }
 
-    // Perform the request
-    esp_err_t err = esp_http_client_perform(client);
+    // Open connection
+    esp_err_t err = esp_http_client_open(client, 0);
     if (err != ESP_OK) {
-        ESP_LOGE(OTA_TAG, "HTTP request failed: %s", esp_err_to_name(err));
+        ESP_LOGE(OTA_TAG, "Failed to open connection: %s", esp_err_to_name(err));
         esp_http_client_cleanup(client);
         return -1;
     }
 
+    // Fetch headers
+    int content_length = esp_http_client_fetch_headers(client);
     int status_code = esp_http_client_get_status_code(client);
-    int content_length = esp_http_client_get_content_length(client);
 
     ESP_LOGI(OTA_TAG, "GET response: status=%d, content_length=%d", status_code, content_length);
 
     if (status_code != 200) {
         ESP_LOGE(OTA_TAG, "GET request returned status: %d", status_code);
+        esp_http_client_close(client);
         esp_http_client_cleanup(client);
         return -1;
     }
@@ -810,10 +812,11 @@ static int check_ota_available(char *new_version, size_t version_len, bool *forc
     char buffer[32] = {0};
     int read_len = esp_http_client_read(client, buffer, sizeof(buffer) - 1);
 
+    esp_http_client_close(client);
     esp_http_client_cleanup(client);
 
     if (read_len <= 0) {
-        ESP_LOGE(OTA_TAG, "Failed to read version from response body");
+        ESP_LOGE(OTA_TAG, "Failed to read version from response body (read_len=%d)", read_len);
         return -1;
     }
 
