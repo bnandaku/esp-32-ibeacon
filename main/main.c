@@ -56,8 +56,7 @@
 // Change this to your webhook endpoint
 #define WEBHOOK_URL "https://discord.com/api/webhooks/1470114757087334411/ZjD8kJmnlqKKyn4oOOm2zjOc233qqK87GsvckmmCmmCxXyis8s0mzxXndH2rQPOCwruB"
 
-// Firmware Version
-#define FIRMWARE_VERSION "3.3.1"
+// Firmware Version - retrieved from app descriptor at runtime
 
 // LED Pin (GPIO 2 on most ESP32 dev boards)
 #define LED_GPIO 2
@@ -356,6 +355,9 @@ static void webhook_task(void *pvParameter)
         char timestamp[32];
         get_timestamp(timestamp, sizeof(timestamp));
 
+        // Get firmware version from app descriptor
+        const esp_app_desc_t *app_desc = esp_app_get_description();
+
         // Create compact JSON payload
         static char json_payload[600];  // Increased size for timestamp field
         snprintf(json_payload, sizeof(json_payload),
@@ -374,7 +376,7 @@ static void webhook_task(void *pvParameter)
             mac_str,
             g_beacon_major,
             g_beacon_minor,
-            FIRMWARE_VERSION,
+            app_desc->version,
             BEACON_UUID_STRING,
             WIFI_SSID,
             ADVERTISING_INTERVAL_MS,
@@ -574,6 +576,9 @@ static void send_ota_error_webhook(const char* error_message)
     char timestamp[32];
     get_timestamp(timestamp, sizeof(timestamp));
 
+    // Get firmware version from app descriptor
+    const esp_app_desc_t *app_desc = esp_app_get_description();
+
     // Create JSON payload for error
     static char json_payload[600];
     snprintf(json_payload, sizeof(json_payload),
@@ -592,7 +597,7 @@ static void send_ota_error_webhook(const char* error_message)
         g_beacon_major,
         g_beacon_minor,
         error_message,
-        FIRMWARE_VERSION,
+        app_desc->version,
         timestamp,
         OTA_UPDATE_URL
     );
@@ -647,6 +652,9 @@ static void send_ota_success_webhook(const char* status_message)
     char timestamp[32];
     get_timestamp(timestamp, sizeof(timestamp));
 
+    // Get firmware version from app descriptor
+    const esp_app_desc_t *app_desc = esp_app_get_description();
+
     // Create JSON payload for success
     static char json_payload[600];
     snprintf(json_payload, sizeof(json_payload),
@@ -665,7 +673,7 @@ static void send_ota_success_webhook(const char* status_message)
         g_beacon_major,
         g_beacon_minor,
         status_message,
-        FIRMWARE_VERSION,
+        app_desc->version,
         timestamp,
         esp_get_free_heap_size()
     );
@@ -965,9 +973,13 @@ static void ota_task(void *pvParameter)
  */
 void app_main(void)
 {
+    // Get firmware version from app descriptor
+    const esp_app_desc_t *app_desc = esp_app_get_description();
+
     ESP_LOGI(TAG, "========================================");
     ESP_LOGI(TAG, "  ESP32 iBeacon + Webhook with OTA");
-    ESP_LOGI(TAG, "  Version %s", FIRMWARE_VERSION);
+    ESP_LOGI(TAG, "  Firmware Version: %s", app_desc->version);
+    ESP_LOGI(TAG, "  Compiled: %s %s", app_desc->date, app_desc->time);
     ESP_LOGI(TAG, "========================================");
     ESP_LOGI(TAG, "");
 
