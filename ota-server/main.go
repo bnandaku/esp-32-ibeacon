@@ -170,6 +170,31 @@ func buildFirmware() {
 	log.Printf("📦 Firmware size: %.2f KB", float64(state.FirmwareSize)/1024)
 }
 
+// Extract firmware version from ESP32 binary (app descriptor at offset 0x20)
+func getFirmwareVersion(filePath string) string {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return ""
+	}
+	defer file.Close()
+
+	// ESP32 app descriptor is at offset 0x20
+	// Version string is at offset 0x10 within the descriptor (32 bytes max)
+	buf := make([]byte, 32)
+	_, err = file.ReadAt(buf, 0x30) // 0x20 + 0x10
+	if err != nil {
+		return ""
+	}
+
+	// Find null terminator
+	for i, b := range buf {
+		if b == 0 {
+			return string(buf[:i])
+		}
+	}
+	return string(buf)
+}
+
 func serveFirmware(w http.ResponseWriter, r *http.Request) {
 	fullPath := filepath.Join(firmwarePath, firmwareFile)
 
@@ -178,6 +203,19 @@ func serveFirmware(w http.ResponseWriter, r *http.Request) {
 		log.Printf("❌ Firmware file not found: %s", fullPath)
 		http.Error(w, "Firmware not found", http.StatusNotFound)
 		return
+	}
+
+	// Extract and send firmware version header
+	version := getFirmwareVersion(fullPath)
+	if version != "" {
+		w.Header().Set("X-Firmware-Version", version)
+		log.Printf("📋 Firmware version: %s", version)
+	}
+
+	// Check for force update flag (from environment variable)
+	if os.Getenv("FORCE_OTA_UPDATE") == "true" {
+		w.Header().Set("X-Force-Update", "true")
+		log.Printf("🔥 Force update enabled")
 	}
 
 	w.Header().Set("Content-Type", "application/octet-stream")

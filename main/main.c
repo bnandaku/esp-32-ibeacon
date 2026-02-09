@@ -57,7 +57,7 @@
 #define WEBHOOK_URL "https://discord.com/api/webhooks/1470114757087334411/ZjD8kJmnlqKKyn4oOOm2zjOc233qqK87GsvckmmCmmCxXyis8s0mzxXndH2rQPOCwruB"
 
 // Firmware Version
-#define FIRMWARE_VERSION "3.2.7"
+#define FIRMWARE_VERSION "3.3.0"
 
 // LED Pin (GPIO 2 on most ESP32 dev boards)
 #define LED_GPIO 2
@@ -753,11 +753,112 @@ static int compare_versions(const char *v1, const char *v2)
 }
 
 /**
+ * Check if OTA update is available (using HEAD request)
+ * Returns: 1 if update available, 0 if up to date, -1 on error
+ */
+static int check_ota_available(char *new_version, size_t version_len, bool *force_update)
+{
+    ESP_LOGI(OTA_TAG, "Checking for updates at: %s", OTA_UPDATE_URL);
+
+    esp_http_client_config_t config = {
+        .url = OTA_UPDATE_URL,
+        .timeout_ms = 10000,
+        .method = HTTP_METHOD_HEAD,
+        .crt_bundle_attach = esp_crt_bundle_attach,
+    };
+
+    esp_http_client_handle_t client = esp_http_client_init(&config);
+    if (client == NULL) {
+        ESP_LOGE(OTA_TAG, "Failed to initialize HTTP client");
+        return -1;
+    }
+
+    esp_err_t err = esp_http_client_perform(client);
+    if (err != ESP_OK) {
+        ESP_LOGE(OTA_TAG, "HEAD request failed: %s", esp_err_to_name(err));
+        esp_http_client_cleanup(client);
+        return -1;
+    }
+
+    int status_code = esp_http_client_get_status_code(client);
+    if (status_code != 200) {
+        ESP_LOGE(OTA_TAG, "HEAD request returned status: %d", status_code);
+        esp_http_client_cleanup(client);
+        return -1;
+    }
+
+    // Check for X-Force-Update header
+    *force_update = false;
+    char force_header[32] = {0};
+    if (esp_http_client_get_header(client, "X-Force-Update", force_header) == ESP_OK) {
+        if (strcmp(force_header, "true") == 0 || strcmp(force_header, "1") == 0) {
+            ESP_LOGW(OTA_TAG, "⚠️  X-Force-Update header detected - will force update!");
+            *force_update = true;
+        }
+    }
+
+    // Get firmware version from X-Firmware-Version header
+    if (esp_http_client_get_header(client, "X-Firmware-Version", new_version) != ESP_OK) {
+        ESP_LOGW(OTA_TAG, "No X-Firmware-Version header found, will download to check");
+        esp_http_client_cleanup(client);
+        return 1;  // Assume update available if can't check version
+    }
+
+    esp_http_client_cleanup(client);
+
+    // Get current version
+    const esp_app_desc_t *running_app_info = esp_app_get_description();
+    ESP_LOGI(OTA_TAG, "Current firmware version: %s", running_app_info->version);
+    ESP_LOGI(OTA_TAG, "Available firmware version: %s", new_version);
+
+    // If force update requested, always return update available
+    if (*force_update) {
+        return 1;
+    }
+
+    // Compare versions
+    int version_cmp = compare_versions(new_version, running_app_info->version);
+
+    if (version_cmp == 0) {
+        ESP_LOGI(OTA_TAG, "✓ Already running latest firmware version");
+        return 0;  // Up to date
+    } else if (version_cmp < 0) {
+        ESP_LOGI(OTA_TAG, "⚠ Available firmware (%s) is older - skipping downgrade", new_version);
+        return 0;  // Don't downgrade
+    }
+
+    ESP_LOGI(OTA_TAG, "✓ New firmware available: %s -> %s", running_app_info->version, new_version);
+    return 1;  // Update available
+}
+
+/**
  * Perform OTA update
  */
 static void perform_ota_update(void)
 {
-    ESP_LOGI(OTA_TAG, "Checking for updates at: %s", OTA_UPDATE_URL);
+    // Step 1: Quick check using HEAD request
+    char new_version[32] = {0};
+    bool force_update = false;
+    int check_result = check_ota_available(new_version, sizeof(new_version), &force_update);
+
+    if (check_result < 0) {
+        ESP_LOGE(OTA_TAG, "Failed to check for updates");
+        send_ota_error_webhook("Failed to check for updates");
+        return;
+    }
+
+    if (check_result == 0 && !force_update) {
+        // No update needed
+        send_ota_success_webhook("Already on latest firmware - no update needed");
+        return;
+    }
+
+    if (force_update) {
+        ESP_LOGW(OTA_TAG, "🔥 FORCED UPDATE MODE - bypassing version check");
+    }
+
+    // Step 2: Download and install firmware
+    ESP_LOGI(OTA_TAG, "Starting firmware download...");
 
     esp_http_client_config_t config = {
         .url = OTA_UPDATE_URL,
@@ -768,8 +869,6 @@ static void perform_ota_update(void)
 
     esp_https_ota_config_t ota_config = {
         .http_config = &config,
-        .partial_http_download = true,
-        .max_http_request_size = 2048,
     };
 
     esp_https_ota_handle_t ota_handle = NULL;
@@ -782,29 +881,7 @@ static void perform_ota_update(void)
         return;
     }
 
-    // Get image descriptor from the new firmware
-    esp_app_desc_t new_app_info;
-    ret = esp_https_ota_get_img_desc(ota_handle, &new_app_info);
-    if (ret != ESP_OK) {
-        ESP_LOGE(OTA_TAG, "✗ Failed to get image descriptor: %s", esp_err_to_name(ret));
-        esp_https_ota_abort(ota_handle);
-        blink_led_ota_error();
-        send_ota_error_webhook("Failed to read firmware descriptor");
-        return;
-    }
-
-    // Get current running app descriptor
-    const esp_app_desc_t *running_app_info = esp_app_get_description();
-
-    ESP_LOGI(OTA_TAG, "Current firmware version: %s", running_app_info->version);
-    ESP_LOGI(OTA_TAG, "New firmware version: %s", new_app_info.version);
-
-    // TEMPORARY: Force update for all beacons (v3.2.7 only)
-    // This bypasses the broken version comparison in 3.2.2 beacons
-    // Will re-enable version checking in v3.2.8
-    ESP_LOGW(OTA_TAG, "⚠️  FORCED UPDATE MODE - bypassing version check");
-    ESP_LOGI(OTA_TAG, "✓ Forcing upgrade from %s to %s...",
-             running_app_info->version, new_app_info.version);
+    ESP_LOGI(OTA_TAG, "Downloading and flashing firmware...");
 
     // Download and flash the new firmware
     while (1) {

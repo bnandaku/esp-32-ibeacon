@@ -10,4 +10,4 @@ set(PARTITION_CSV_PATH "${CMAKE_SOURCE_DIR}/partitions_ota.csv")
 # Optimized build - only include essential components
 idf_build_set_property(MINIMAL_BUILD ON)
 
-project(esp32-ibeacon-transmitter VERSION 3.2.7)
+project(esp32-ibeacon-transmitter VERSION 3.3.0)
