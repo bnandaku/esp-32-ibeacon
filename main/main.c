@@ -57,7 +57,7 @@
 #define WEBHOOK_URL "https://discord.com/api/webhooks/1470114757087334411/ZjD8kJmnlqKKyn4oOOm2zjOc233qqK87GsvckmmCmmCxXyis8s0mzxXndH2rQPOCwruB"
 
 // Firmware Version
-#define FIRMWARE_VERSION "3.2.5"
+#define FIRMWARE_VERSION "3.2.6"
 
 // LED Pin (GPIO 2 on most ESP32 dev boards)
 #define LED_GPIO 2
@@ -718,14 +718,23 @@ static int compare_versions(const char *v1, const char *v2)
     int major1, minor1, patch1;
     int major2, minor2, patch2;
 
-    // Parse version strings
-    if (sscanf(v1, "%d.%d.%d", &major1, &minor1, &patch1) != 3) {
-        ESP_LOGW(OTA_TAG, "Invalid version format: %s", v1);
-        return 0;  // Treat as equal if can't parse
+    // Parse new firmware version (v1)
+    bool v1_valid = (sscanf(v1, "%d.%d.%d", &major1, &minor1, &patch1) == 3);
+    // Parse current firmware version (v2)
+    bool v2_valid = (sscanf(v2, "%d.%d.%d", &major2, &minor2, &patch2) == 3);
+
+    // Handle malformed versions
+    if (!v1_valid && !v2_valid) {
+        ESP_LOGW(OTA_TAG, "Both versions invalid - new: '%s', current: '%s'", v1, v2);
+        return 0;  // Both invalid, treat as equal
     }
-    if (sscanf(v2, "%d.%d.%d", &major2, &minor2, &patch2) != 3) {
-        ESP_LOGW(OTA_TAG, "Invalid version format: %s", v2);
-        return 0;  // Treat as equal if can't parse
+    if (!v1_valid) {
+        ESP_LOGW(OTA_TAG, "New version invalid: '%s' - rejecting update", v1);
+        return -1;  // New version invalid, don't update
+    }
+    if (!v2_valid) {
+        ESP_LOGW(OTA_TAG, "Current version invalid: '%s' - forcing update to '%s'", v2, v1);
+        return 1;  // Current version invalid, force update
     }
 
     // Compare major version
