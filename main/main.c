@@ -359,7 +359,7 @@ static void webhook_task(void *pvParameter)
         const esp_app_desc_t *app_desc = esp_app_get_description();
 
         // Create compact JSON payload
-        static char json_payload[600];  // Increased size for timestamp field
+        static char json_payload[650];  // Increased size for version and timestamp fields
         snprintf(json_payload, sizeof(json_payload),
             "{\"content\":\"iBeacon Connected\","
             "\"embeds\":[{\"title\":\"ESP32 iBeacon Online\",\"color\":3066993,"
@@ -580,7 +580,7 @@ static void send_ota_error_webhook(const char* error_message)
     const esp_app_desc_t *app_desc = esp_app_get_description();
 
     // Create JSON payload for error
-    static char json_payload[600];
+    static char json_payload[650];
     snprintf(json_payload, sizeof(json_payload),
         "{\"content\":\"⚠️ OTA Update Failed\","
         "\"embeds\":[{\"title\":\"ESP32 OTA Error\",\"color\":15158332,"
@@ -656,7 +656,7 @@ static void send_ota_success_webhook(const char* status_message)
     const esp_app_desc_t *app_desc = esp_app_get_description();
 
     // Create JSON payload for success
-    static char json_payload[600];
+    static char json_payload[650];
     snprintf(json_payload, sizeof(json_payload),
         "{\"content\":\"✅ OTA Check Complete\","
         "\"embeds\":[{\"title\":\"ESP32 OTA Status\",\"color\":5763719,"
