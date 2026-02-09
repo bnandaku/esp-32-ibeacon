@@ -210,6 +210,8 @@ func serveFirmware(w http.ResponseWriter, r *http.Request) {
 	if version != "" {
 		w.Header().Set("X-Firmware-Version", version)
 		log.Printf("📋 Firmware version: %s", version)
+	} else {
+		log.Printf("⚠️  Could not extract firmware version")
 	}
 
 	// Check for force update flag (from environment variable)
@@ -221,6 +223,14 @@ func serveFirmware(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", firmwareFile))
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", fileInfo.Size()))
+
+	// For HEAD requests, just write headers (don't use ServeFile as it might override headers)
+	if r.Method == "HEAD" {
+		log.Printf("📤 HEAD request: %s (%.2f KB) to %s", firmwareFile, float64(fileInfo.Size())/1024, r.RemoteAddr)
+		w.WriteHeader(http.StatusOK)
+		log.Printf("✅ Headers sent")
+		return
+	}
 
 	log.Printf("📤 Serving firmware: %s (%.2f KB) to %s", firmwareFile, float64(fileInfo.Size())/1024, r.RemoteAddr)
 	http.ServeFile(w, r, fullPath)
