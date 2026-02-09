@@ -39,6 +39,7 @@ func main() {
 
 	// HTTP handlers
 	http.HandleFunc("/beacon_firmware.bin", serveFirmware)
+	http.HandleFunc("/version", versionCheckHandler)
 	http.HandleFunc("/health", healthCheck)
 	http.HandleFunc("/status", statusHandler)
 	http.HandleFunc("/build", manualBuildHandler)
@@ -235,6 +236,40 @@ func serveFirmware(w http.ResponseWriter, r *http.Request) {
 	log.Printf("📤 Serving firmware: %s (%.2f KB) to %s", firmwareFile, float64(fileInfo.Size())/1024, r.RemoteAddr)
 	http.ServeFile(w, r, fullPath)
 	log.Printf("✅ Firmware delivered")
+}
+
+func versionCheckHandler(w http.ResponseWriter, r *http.Request) {
+	fullPath := filepath.Join(firmwarePath, firmwareFile)
+
+	fileInfo, err := os.Stat(fullPath)
+	if os.IsNotExist(err) {
+		log.Printf("❌ Firmware file not found: %s", fullPath)
+		http.Error(w, "Firmware not found", http.StatusNotFound)
+		return
+	}
+
+	// Extract and send firmware version header
+	version := getFirmwareVersion(fullPath)
+	if version != "" {
+		w.Header().Set("X-Firmware-Version", version)
+		log.Printf("📋 Version check: %s", version)
+	} else {
+		log.Printf("⚠️  Could not extract firmware version")
+	}
+
+	// Check for force update flag (from environment variable)
+	if os.Getenv("FORCE_OTA_UPDATE") == "true" {
+		w.Header().Set("X-Force-Update", "true")
+		log.Printf("🔥 Force update enabled")
+	}
+
+	w.Header().Set("Content-Type", "text/plain")
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(version)))
+
+	log.Printf("📤 Version check from %s", r.RemoteAddr)
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprint(w, version)
+	log.Printf("✅ Version sent: %s (%.0f bytes)", version, float64(fileInfo.Size()))
 }
 
 func healthCheck(w http.ResponseWriter, r *http.Request) {

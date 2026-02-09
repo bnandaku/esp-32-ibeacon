@@ -49,13 +49,11 @@
 #define WIFI_PASSWORD  CONFIG_EXAMPLE_WIFI_PASSWORD
 
 // OTA Version Check URL - Lightweight endpoint to check firmware version
-// Can be same as download URL or separate (e.g., status endpoint)
-// Example: "http://192.168.1.100:8080/version" or same as OTA_DOWNLOAD_URL
-#define OTA_VERSION_CHECK_URL CONFIG_EXAMPLE_FIRMWARE_UPGRADE_URL
+// Scenario 2: Separate status endpoint for bandwidth optimization
+#define OTA_VERSION_CHECK_URL "http://beacon.bramsoft.com:8080/version"
 
 // OTA Download URL - Where to download the actual firmware binary
-// Example: "http://192.168.1.100:8080/firmware.bin" or CDN URL
-#define OTA_DOWNLOAD_URL CONFIG_EXAMPLE_FIRMWARE_UPGRADE_URL
+#define OTA_DOWNLOAD_URL "http://beacon.bramsoft.com:8080/beacon_firmware.bin"
 
 // Webhook URL - Send HTTPS POST requests to this URL
 // Change this to your webhook endpoint
