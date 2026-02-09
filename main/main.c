@@ -789,20 +789,25 @@ static int check_ota_available(char *new_version, size_t version_len, bool *forc
 
     // Check for X-Force-Update header
     *force_update = false;
-    char force_header[32] = {0};
-    if (esp_http_client_get_header(client, "X-Force-Update", force_header) == ESP_OK) {
-        if (strcmp(force_header, "true") == 0 || strcmp(force_header, "1") == 0) {
+    char *force_header_ptr = NULL;
+    if (esp_http_client_get_header(client, "X-Force-Update", &force_header_ptr) == ESP_OK) {
+        if (force_header_ptr && (strcmp(force_header_ptr, "true") == 0 || strcmp(force_header_ptr, "1") == 0)) {
             ESP_LOGW(OTA_TAG, "⚠️  X-Force-Update header detected - will force update!");
             *force_update = true;
         }
     }
 
     // Get firmware version from X-Firmware-Version header
-    if (esp_http_client_get_header(client, "X-Firmware-Version", new_version) != ESP_OK) {
+    char *version_header_ptr = NULL;
+    if (esp_http_client_get_header(client, "X-Firmware-Version", &version_header_ptr) != ESP_OK || version_header_ptr == NULL) {
         ESP_LOGW(OTA_TAG, "No X-Firmware-Version header found, will download to check");
         esp_http_client_cleanup(client);
         return 1;  // Assume update available if can't check version
     }
+
+    // Copy version string to output buffer
+    strncpy(new_version, version_header_ptr, version_len - 1);
+    new_version[version_len - 1] = '\0';
 
     esp_http_client_cleanup(client);
 
