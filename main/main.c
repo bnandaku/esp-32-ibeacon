@@ -771,7 +771,9 @@ static int check_ota_available(char *new_version, size_t version_len, bool *forc
 {
     ESP_LOGI(OTA_TAG, "Checking version at: %s", OTA_VERSION_CHECK_URL);
 
-    // Use GET with Range header to request only first byte (gets headers without full download)
+    *force_update = false;
+
+    // Simple GET request to version endpoint
     esp_http_client_config_t config = {
         .url = OTA_VERSION_CHECK_URL,
         .timeout_ms = 10000,
@@ -785,64 +787,55 @@ static int check_ota_available(char *new_version, size_t version_len, bool *forc
         return -1;
     }
 
-    // Set Range header to only request first byte (206 Partial Content response)
-    esp_http_client_set_header(client, "Range", "bytes=0-0");
-
-    // Open connection and send request
-    esp_err_t err = esp_http_client_open(client, 0);
+    // Perform the request
+    esp_err_t err = esp_http_client_perform(client);
     if (err != ESP_OK) {
-        ESP_LOGE(OTA_TAG, "Failed to open HTTP connection: %s", esp_err_to_name(err));
+        ESP_LOGE(OTA_TAG, "HTTP request failed: %s", esp_err_to_name(err));
         esp_http_client_cleanup(client);
         return -1;
     }
 
-    // Fetch response headers
-    int content_length = esp_http_client_fetch_headers(client);
     int status_code = esp_http_client_get_status_code(client);
+    int content_length = esp_http_client_get_content_length(client);
 
     ESP_LOGI(OTA_TAG, "GET response: status=%d, content_length=%d", status_code, content_length);
 
-    // Accept both 200 (OK) and 206 (Partial Content)
-    if (status_code != 200 && status_code != 206) {
+    if (status_code != 200) {
         ESP_LOGE(OTA_TAG, "GET request returned status: %d", status_code);
-        esp_http_client_close(client);
         esp_http_client_cleanup(client);
         return -1;
     }
 
-    // Check for X-Force-Update header
-    *force_update = false;
-    char *force_header_ptr = NULL;
-    err = esp_http_client_get_header(client, "X-Force-Update", &force_header_ptr);
-    ESP_LOGI(OTA_TAG, "X-Force-Update header: err=%s, value=%s",
-             esp_err_to_name(err), force_header_ptr ? force_header_ptr : "NULL");
-    if (err == ESP_OK && force_header_ptr != NULL) {
-        if (strcmp(force_header_ptr, "true") == 0 || strcmp(force_header_ptr, "1") == 0) {
-            ESP_LOGW(OTA_TAG, "⚠️  X-Force-Update header detected - will force update!");
-            *force_update = true;
-        }
+    // Read the response body (version string)
+    char buffer[32] = {0};
+    int read_len = esp_http_client_read(client, buffer, sizeof(buffer) - 1);
+
+    esp_http_client_cleanup(client);
+
+    if (read_len <= 0) {
+        ESP_LOGE(OTA_TAG, "Failed to read version from response body");
+        return -1;
     }
 
-    // Get firmware version from X-Firmware-Version header
-    char *version_header_ptr = NULL;
-    err = esp_http_client_get_header(client, "X-Firmware-Version", &version_header_ptr);
-    ESP_LOGI(OTA_TAG, "X-Firmware-Version header: err=%s, value=%s",
-             esp_err_to_name(err), version_header_ptr ? version_header_ptr : "NULL");
+    buffer[read_len] = '\0';
 
-    if (err != ESP_OK || version_header_ptr == NULL) {
-        ESP_LOGW(OTA_TAG, "No X-Firmware-Version header found, will download to check");
-        esp_http_client_close(client);
-        esp_http_client_cleanup(client);
-        return 1;  // Assume update available if can't check version
+    // Remove any whitespace/newlines
+    char *version_start = buffer;
+    while (*version_start && (*version_start == ' ' || *version_start == '\n' || *version_start == '\r')) {
+        version_start++;
+    }
+
+    char *version_end = version_start + strlen(version_start) - 1;
+    while (version_end > version_start && (*version_end == ' ' || *version_end == '\n' || *version_end == '\r')) {
+        *version_end = '\0';
+        version_end--;
     }
 
     // Copy version string to output buffer
-    strncpy(new_version, version_header_ptr, version_len - 1);
+    strncpy(new_version, version_start, version_len - 1);
     new_version[version_len - 1] = '\0';
 
-    // Close connection and cleanup
-    esp_http_client_close(client);
-    esp_http_client_cleanup(client);
+    ESP_LOGI(OTA_TAG, "Server version: %s", new_version);
 
     // Get current version
     const esp_app_desc_t *running_app_info = esp_app_get_description();
