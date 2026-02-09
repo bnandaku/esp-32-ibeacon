@@ -82,8 +82,8 @@
 #define ADVERTISING_INTERVAL_MS 300
 
 // Transmit Power (ESP32 Power Levels)
-// ESP_PWR_LVL_N0 = 0 dBm (~5-8m range) - Medium power for room detection
-#define TRANSMIT_POWER ESP_PWR_LVL_N0
+// ESP_PWR_LVL_P3 = +3 dBm (~8-12m range) - Higher power for extended range
+#define TRANSMIT_POWER ESP_PWR_LVL_P3
 
 // ============================================================================
 // END OF CONFIGURATION
