@@ -57,7 +57,7 @@
 #define WEBHOOK_URL "https://discord.com/api/webhooks/1470114757087334411/ZjD8kJmnlqKKyn4oOOm2zjOc233qqK87GsvckmmCmmCxXyis8s0mzxXndH2rQPOCwruB"
 
 // Firmware Version
-#define FIRMWARE_VERSION "3.2.6"
+#define FIRMWARE_VERSION "3.2.7"
 
 // LED Pin (GPIO 2 on most ESP32 dev boards)
 #define LED_GPIO 2
@@ -799,23 +799,11 @@ static void perform_ota_update(void)
     ESP_LOGI(OTA_TAG, "Current firmware version: %s", running_app_info->version);
     ESP_LOGI(OTA_TAG, "New firmware version: %s", new_app_info.version);
 
-    // Compare versions (prevent downgrades and skip if already on latest)
-    int version_cmp = compare_versions(new_app_info.version, running_app_info->version);
-
-    if (version_cmp == 0) {
-        ESP_LOGI(OTA_TAG, "✓ Already running latest firmware version");
-        esp_https_ota_abort(ota_handle);
-        send_ota_success_webhook("Already on latest firmware - no update needed");
-        return;
-    } else if (version_cmp < 0) {
-        ESP_LOGI(OTA_TAG, "⚠ New firmware (%s) is older than current (%s) - skipping downgrade",
-                 new_app_info.version, running_app_info->version);
-        esp_https_ota_abort(ota_handle);
-        send_ota_success_webhook("Skipped downgrade - keeping current firmware");
-        return;
-    }
-
-    ESP_LOGI(OTA_TAG, "✓ New firmware available! Upgrading from %s to %s...",
+    // TEMPORARY: Force update for all beacons (v3.2.7 only)
+    // This bypasses the broken version comparison in 3.2.2 beacons
+    // Will re-enable version checking in v3.2.8
+    ESP_LOGW(OTA_TAG, "⚠️  FORCED UPDATE MODE - bypassing version check");
+    ESP_LOGI(OTA_TAG, "✓ Forcing upgrade from %s to %s...",
              running_app_info->version, new_app_info.version);
 
     // Download and flash the new firmware
