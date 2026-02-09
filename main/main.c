@@ -75,15 +75,15 @@
 
 // Default Major/Minor values (used only on first boot if NVS is empty)
 #define DEFAULT_BEACON_MAJOR 100
-#define DEFAULT_BEACON_MINOR 10
+#define DEFAULT_BEACON_MINOR 14
 
 // Advertising interval in milliseconds (50-10000)
 // 50ms = 20 broadcasts per second (very responsive)
 #define ADVERTISING_INTERVAL_MS 50
 
 // Transmit Power (ESP32 Power Levels)
-// ESP_PWR_LVL_N3 = -3 dBm (~3-5m range) - Reduced power for closer proximity detection
-#define TRANSMIT_POWER ESP_PWR_LVL_N3
+// ESP_PWR_LVL_N0 = 0 dBm (~5-8m range) - Medium power for room detection
+#define TRANSMIT_POWER ESP_PWR_LVL_N0
 
 // ============================================================================
 // END OF CONFIGURATION
